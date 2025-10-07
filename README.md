@@ -3,7 +3,7 @@
 RSS로 모은 보안 기사들을 **정규화**해서, 브라우저에서 즉시 **정렬/분류/검색**해 보여주는 **가벼운 정적 웹페이지**입니다.  
 프런트는 정적 JSON만 읽고, 데이터 갱신은 서버(crontab) 또는 GitHub Actions가 맡습니다.
 
-- **데모**: *https://github.com/BIN2PAGE/secunews-normalizer*  
+- **데모**: *http://binpage.kr/news*  
 - **주요 소스**: 보안뉴스(https://www.boannews.com/media/news_rss.xml), 데일리시큐(https://www.dailysecu.com/rss/allArticle.xml)
 
 ---
