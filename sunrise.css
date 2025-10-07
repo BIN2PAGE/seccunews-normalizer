@@ -1,0 +1,258 @@
+/* ===== Sunrise Theme (동산 위로 떠오르는 아침) ===== */
+
+/* 팔레트 변수 (라이트/다크 둘 다 커버) */
+:root{
+  /* 햇살/하늘 */
+  --sun-1:#FFE8C8;   /* 아주 옅은 햇살 */
+  --sun-2:#FFD29F;   /* 부드러운 오렌지 */
+  --sun-3:#FFB56B;   /* 진한 살구 */
+  --sky-1:#C6E7FF;   /* 옅은 하늘 */
+  --sky-2:#86C5FF;   /* 파스텔 하늘 */
+  --hill-1:#D7E9D0;  /* 초록빛 언덕 */
+
+  /* 기본 UI */
+  --bg:#FAFBFD;
+  --card:#FFFFFF;
+  --text:#101828;
+  --muted:#768197;
+  --line:#E7E9EF;
+
+  /* 포커스 & 버튼용 그라데이션 (햇살→하늘) */
+  --brand-a:#FFB56B;
+  --brand-b:#86C5FF;
+
+  --radius:18px;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.04);
+  --shadow-lg:0 12px 28px rgba(0,0,0,.10);
+
+  /* 헤더 배경 이미지(선택). body.sunrise에서 경로 주입 */
+  --header-image:none;
+}
+
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0B0C0F;
+    --card:#111318;
+    --text:#EAECEF;
+    --muted:#8A93A1;
+    --line:#1D2130;
+
+    /* 다크에서 너무 튀지 않게 톤 다운 */
+    --brand-a:#FFB56B;
+    --brand-b:#5AA9FF;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.30);
+    --shadow-lg:0 16px 32px rgba(0,0,0,.35);
+  }
+}
+
+/* --- 베이스 --- */
+*{ box-sizing:border-box }
+html,body{ height:100% }
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+/* --- 헤더: 새벽 하늘 그라데이션 + (옵션) 이미지 오버레이 --- */
+header{
+  position:sticky; top:0; z-index:10;
+  border-bottom:1px solid var(--line);
+  padding:18px 16px;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--sun-1) 70%, transparent) 0%, transparent 45%),
+    linear-gradient(135deg, var(--sun-2) 0%, var(--sun-3) 35%, var(--sky-1) 70%, var(--sky-2) 100%),
+    var(--card);
+  background-blend-mode:soft-light, normal, normal;
+  background-image:
+    linear-gradient(180deg, color-mix(in oklab, var(--sun-1) 70%, transparent) 0%, transparent 45%),
+    linear-gradient(135deg, var(--sun-2) 0%, var(--sun-3) 35%, var(--sky-1) 70%, var(--sky-2) 100%),
+    var(--header-image);
+  background-size:cover, cover, cover;
+  background-position:center, center, center;
+  backdrop-filter:saturate(140%) blur(6px);
+}
+
+/* body.sunrise 에서만 헤더 이미지 적용 예시 경로 */
+body.sunrise{
+  /* 필요 시 교체: assets/sunrise.jpg 업로드 */
+  --header-image: url("../assets/sunrise.jpg");
+}
+
+.title{ font-size:24px; font-weight:800; letter-spacing:-.3px }
+.subtitle{ margin-top:4px; color:var(--muted); font-size:12px }
+.bar{ margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center }
+
+/* --- 탭/버튼 --- */
+.tab{
+  padding:10px 14px; border:1px solid var(--line); border-radius:999px;
+  background:var(--card); cursor:pointer; font-size:14px;
+  transition:transform .12s ease, box-shadow .12s ease, background .12s ease, color .12s ease, border-color .12s ease;
+  min-height:40px;
+}
+.tab:hover{ transform:translateY(-1px); box-shadow:0 6px 16px rgba(0,0,0,.08) }
+.tab:focus-visible{ outline:3px solid color-mix(in oklab, var(--brand-b) 65%, #fff) }
+.tab.active{
+  color:#fff; border-color:transparent;
+  background:linear-gradient(135deg, var(--brand-a), var(--brand-b));
+  box-shadow:0 8px 22px color-mix(in oklab, var(--brand-b) 35%, black);
+}
+
+/* --- 레이아웃 --- */
+.wrap{ max-width:1000px; margin:18px auto 60px; padding:0 16px }
+.grid{ display:grid; grid-template-columns:1fr; gap:16px }
+@media (min-width:900px){ .grid{ grid-template-columns:1fr 1fr }}
+
+/* 그리드 전체 폭(줄 헤더 용) */
+.full{ grid-column:1 / -1; }
+
+/* --- 카드 --- */
+.card{
+  background:var(--card); border:1px solid var(--line);
+  border-radius:var(--radius); padding:18px; box-shadow:var(--shadow-sm);
+  transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+}
+.card:hover{ transform:translateY(-3px); box-shadow:var(--shadow-lg) }
+.card h3{ margin:0 0 8px; font-size:18px; line-height:1.45; letter-spacing:-.2px }
+.card h3 a{ color:inherit; text-decoration:none }
+.card h3 a:hover{ text-decoration:underline }
+
+.desc{
+  color:#4c5561; font-size:14px; line-height:1.6;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient: vertical; overflow:hidden;
+}
+@media (prefers-color-scheme:dark){ .desc{ color:#a9b1bb }}
+
+/* --- 메타/칩 --- */
+.meta{ margin-top:12px; font-size:12px; color:var(--muted); display:flex; gap:8px; flex-wrap:wrap; align-items:center }
+.meta span{
+  background:rgba(255,255,255,.6); border:1px solid var(--line); border-radius:999px; padding:4px 8px;
+}
+@media (prefers-color-scheme:dark){
+  .meta span{ background:#0f1320; border-color:#1d2130 }
+}
+
+.chips{ margin-top:10px; display:flex; gap:6px; flex-wrap:wrap }
+.chip{ font-size:11px; padding:4px 8px; border-radius:999px; background:#fff7ed; color:#9a3412; border:1px solid rgba(0,0,0,.06) }
+.chip.src{ background:#e0f2fe; color:#075985 }
+.chip.cat-OCEAN{ background:#dff7ff; color:#075985 }
+.chip.cat-FORENSICS{ background:#ecfccb; color:#3f6212 }
+.chip.cat-AI{ background:#f3e8ff; color:#6b21a8 }
+
+.score{ margin-left:auto; font-weight:700; opacity:.7 }
+.empty{ text-align:center; color:var(--muted); padding:40px 0 }
+
+/* --- 입력류 --- */
+.datebox{ display:flex; gap:8px; align-items:center; margin-left:auto }
+.datebox input[type="date"]{
+  padding:9px 10px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  font-size:14px;
+  background:var(--card);
+  color:var(--text);
+}
+
+/* 이후 소식 헤더 */
+.extra-head{
+  display:flex; align-items:center; gap:10px;
+  margin:8px 0 12px 0;
+  padding:8px 10px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:linear-gradient(180deg, rgba(255,183,77,.18), rgba(255,243,224,.18));
+}
+@media (prefers-color-scheme: dark){
+  .extra-head{
+    background:linear-gradient(180deg, rgba(255,183,77,.10), rgba(255,243,224,.06));
+    border-color:#2a2f3e;
+  }
+}
+.extra-badge{
+  font-size:12px; font-weight:700;
+  padding:6px 10px; border-radius:999px;
+  background:linear-gradient(135deg,#FFB84D,#FFDCA8);
+  color:#4a2b00;
+}
+.extra-sub{ font-size:12px; color:var(--muted); }
+
+/* 카테고리 칩 다크 모드 보정 */
+@media (prefers-color-scheme: dark){
+  .chip.cat-OCEAN   { background:#0b2230; color:#a8e5ff; border-color:#1d2130; }
+  .chip.cat-FORENSICS{ background:#0f1533; color:#c7d2fe; border-color:#1d2130; }
+  .chip.cat-AI      { background:#2a1e08; color:#ffd596; border-color:#1d2130; }
+}
+
+/* 소스 칩(보안뉴스/데일리시큐) */
+.chip.src{
+  background:linear-gradient(135deg,#FFE3A3,#FFF3D6);
+  color:#5a3a00;
+}
+@media (prefers-color-scheme: dark){
+  .chip.src{ background:linear-gradient(135deg,#2b1f0a,#3a2a11); color:#ffd79c; }
+}
+
+/* === To-Top FAB === */
+.footerbar{
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  pointer-events: none; /* 컨테이너는 클릭 막고 */
+}
+.fab{
+  pointer-events: auto; /* 버튼만 클릭 가능 */
+  display: none;        /* 스크롤 시 JS가 토글 */
+  width: 44px; height: 44px; border: 0; border-radius: 999px;
+  align-items: center; justify-content: center;
+  font-size: 18px; line-height: 1; cursor: pointer;
+  background: linear-gradient(135deg, var(--brand-a), var(--brand-b));
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(0,0,0,.18);
+  transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+  backdrop-filter: saturate(140%) blur(4px);
+}
+.fab:hover{ transform: translateY(-2px); box-shadow: 0 14px 32px rgba(0,0,0,.22); }
+.fab:active{ transform: translateY(0);  box-shadow: 0 8px 18px rgba(0,0,0,.18); }
+
+@media (prefers-color-scheme: dark){
+  .fab{
+    box-shadow: 0 12px 28px rgba(0,0,0,.35);
+  }
+}
+
+/* ===== Controls (검색/필터 버튼/입력) ===== */
+.toolbar{ margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center }
+
+.input{
+  border:1px solid var(--line);
+  background:var(--card);
+  border-radius:10px;
+  padding:10px 12px;
+  font-size:14px;
+  min-width:220px;
+  color:var(--text);
+}
+.input::placeholder{ color:var(--muted) }
+
+.row{ display:flex; gap:6px; flex-wrap:wrap; align-items:center }
+
+.pill{
+  border:1px solid var(--line);
+  background:var(--card);
+  border-radius:999px;
+  padding:8px 12px;
+  cursor:pointer;
+  font-size:13px;
+  min-height:36px;
+  transition:transform .12s ease, box-shadow .12s ease, background .12s ease, color .12s ease, border-color .12s ease;
+}
+.pill:hover{ transform:translateY(-1px); box-shadow:0 6px 16px rgba(0,0,0,.08) }
+.pill:focus-visible{ outline:3px solid color-mix(in oklab, var(--brand-b) 65%, #fff) }
+.pill.active{
+  color:#fff; border-color:transparent;
+  background:linear-gradient(135deg, var(--brand-a), var(--brand-b));
+  box-shadow:0 8px 22px color-mix(in oklab, var(--brand-b) 35%, black);
+}
+
+/* 구분선 텍스트 */
+.divider{ margin:20px 0 6px; color:var(--muted); font-size:12px; text-align:center }
