@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ALL SECURITY NEWS</title>
+<link rel="stylesheet" href="assets/sunrise.css">
+</head>
+<body class="sunrise">
+<header>
+  <div class="title">전체 보안 뉴스</div>
+  <div id="info" class="subtitle">feed.json 최신순 · 검색/필터 가능</div>
+  <div class="toolbar bar">
+    <input id="q" class="input" placeholder="검색: 제목/내용/기자"/>
+    <div id="srcs" class="row" style="gap:6px">
+      <button class="pill active" data-src="ALL">전체 소스</button>
+      <button class="pill" data-src="보안뉴스">보안뉴스</button>
+      <button class="pill" data-src="데일리시큐">데일리시큐</button>
+    </div>
+    <div id="cats" class="row" style="gap:6px">
+      <button class="pill active" data-cat="ALL">전체</button>
+      <button class="pill" data-cat="OCEAN">해양</button>
+      <button class="pill" data-cat="FORENSICS">포렌식</button>
+      <button class="pill" data-cat="AI">AI</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div id="list" class="grid"><div class="empty">불러오는 중…</div></div>
+  <div id="sentinel" class="divider" style="text-align:center">아래로 스크롤하면 더 보기</div>
+</div>
+
+<script>
+/* ===== 카테고리 키워드 ===== */
+const CATS = {
+  OCEAN:["해양","해양안전","해상","해역","연안","항만","항로","항행","선박","해운","해양수산부","해수부","해양경찰","해양경찰청","maritime","coast guard","imo"],
+  FORENSICS:["포렌식","디지털포렌식","디지털 포렌식","dfir","메모리 포렌식","모바일 포렌식","이미지 추출","증거 보존","로그 분석","타임라인 분석","법과학","forensic"],
+  AI:["AI","인공지능","생성형","에이전트","모델","파운데이션 모델","프롬프트","코파일럿","모델 유출","모델 탈취","프롬프트 인젝션","데이터 중독","모델 포이즈닝","LLM","MCP","Agent","RAG","Copilot","model","ai","llm","agent","mcp","rag","copilot"]
+};
+/* --- 해양: 엄격 포함어 & 제외어 --- */
+const OCEAN_INCLUDE_STRICT = [
+  "해양","해상","연안","항만","항로","항행","선박","해운",
+  "해양수산부","해수부","해양경찰","해양경찰청","maritime","coast guard","imo"
+];
+const OCEAN_EXCLUDES = [
+  "출시","할인","세일","이벤트","프로모션","팝업","오픈","리뉴얼","예약 판매","예약판매",
+  "플래그십","가전","뷰티","패션","쇼핑","매장","오프라인","특가","증정","체험단","협찬",
+  "캠핑","텐트","플리스","스니커즈","가구","인테리어","프로젝터","향수","백화점","입점"
+];
+
+const listEl = document.getElementById('list');
+const infoEl = document.getElementById('info');
+const qEl = document.getElementById('q');
+const srcWrap = document.getElementById('srcs');
+const catWrap = document.getElementById('cats');
+const sentinel = document.getElementById('sentinel');
+
+let all=[], filtered=[], shown=0, page=20;
+let activeSrc='ALL', activeCat='ALL', term='';
+
+/* ===== 유틸 ===== */
+function stripTags(html){ const d=document.createElement('div'); d.innerHTML=html||''; return (d.textContent||d.innerText||'').trim(); }
+function getDomain(u){ try{ return new URL(u).hostname.replace(/^www\./,''); }catch{ return ''; } }
+function ymdhm(s){ if(!s) return ''; const d=new Date(s); if(isNaN(d)) return s; const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function hasHangul(s){ return /[가-힣]/.test(s); }
+function makeBoundaryRegex(keyword){ const esc=keyword.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); return new RegExp(`(^|[^0-9A-Za-z가-힣])(${esc})`,"i"); }
+function keywordMatch(text, keywords){
+  const normalized=(text||"").replace(/\s+/g," ");
+  const lower=normalized.toLowerCase();
+  for(const kw of (keywords||[])){
+    if (hasHangul(kw)){ if (lower.includes(kw.toLowerCase())) return true; }
+    else { if (makeBoundaryRegex(kw).test(normalized)) return true; }
+  }
+  return false;
+}
+
+/* ===== 카테고리 매칭 (해양만 엄격) ===== */
+function matchCategory(item, cat){
+  if (cat==='ALL') return true;
+  const text=(item.title+' '+(item.summary||'')).trim();
+
+  if (cat==='OCEAN'){
+    const inc = keywordMatch(text, OCEAN_INCLUDE_STRICT);
+    const exc = keywordMatch(text, OCEAN_EXCLUDES);
+    return inc && !exc;
+  }
+  if (Array.isArray(item.cats) && item.cats.includes(cat)) return true;
+  return keywordMatch(text, CATS[cat]);
+}
+
+/* ===== 필터 & 최신순 정렬 & 렌더 ===== */
+function applyFilters(){
+  const t = term.trim().toLowerCase();
+
+  filtered = all.filter(it=>{
+    if (activeSrc!=='ALL' && (it.source||'')!==activeSrc) return false;
+    if (!matchCategory(it, activeCat)) return false;
+    if (t){
+      const hay = [it.title, stripTags(it.summary), it.author, getDomain(it.link)].join(' ').toLowerCase();
+      if (!hay.includes(t)) return false;
+    }
+    return true;
+  });
+
+  // 항상 최신순
+  filtered.sort((a,b)=> new Date(b.published||b.published_raw||0) - new Date(a.published||a.published_raw||0));
+
+  shown = 0;
+  listEl.innerHTML = '';
+  loadMore();
+  infoEl.textContent = `${new Intl.NumberFormat().format(filtered.length)}건 · 소스:${activeSrc} · 카테고리:${activeCat}${t?` · 검색:“${term}”`:''}`;
+}
+
+function renderCard(it){
+  const chips = [];
+  if (it.source) chips.push(`<span class="chip src">${it.source}</span>`);
+  (it.cats||[]).forEach(c=>{
+    const label = c==='OCEAN'?'해양':c==='FORENSICS'?'포렌식':c==='AI'?'AI':c;
+    chips.push(`<span class="chip cat-${c}">${label}</span>`);
+  });
+
+  return `
+    <article class="card">
+      <h3><a href="${it.link||'#'}" target="_blank" rel="noopener noreferrer">${it.title||''}</a></h3>
+      <div class="desc">${stripTags(it.summary||'')}</div>
+      <div class="chips">${chips.join('')}</div>
+      <div class="meta">
+        <span>${ymdhm(it.published || it.published_raw)}</span>
+        ${it.author?`<span>${it.author}</span>`:''}
+        ${getDomain(it.link)?`<span>${getDomain(it.link)}</span>`:''}
+      </div>
+    </article>
+  `;
+}
+
+function loadMore(){
+  const slice = filtered.slice(shown, shown+page);
+  if (!slice.length && shown===0){
+    listEl.innerHTML = `<div class="empty">표시할 뉴스가 없습니다.</div>`;
+    return;
+  }
+  listEl.insertAdjacentHTML('beforeend', slice.map(renderCard).join(''));
+  shown += slice.length;
+  sentinel.textContent = shown < filtered.length ? '아래로 스크롤하면 더 보기' : '모두 표시됨';
+}
+
+/* ===== 데이터 로드 ===== */
+async function fetchFeed(){
+  try{
+    const url = new URL('feed.json', location.href).toString();
+    const r = await fetch(url,{cache:'no-store'});
+    const j = await r.json();
+    all = Array.isArray(j.items) ? j.items : [];
+
+    // 중복 링크 제거(최신 우선)
+    all.sort((a,b)=> new Date(b.published||b.published_raw||0) - new Date(a.published||a.published_raw||0));
+    const seen = new Set();
+    all = all.filter(it=>{ const k = it.link||it.title; if(seen.has(k)) return false; seen.add(k); return true; });
+
+    applyFilters();
+  }catch{
+    listEl.innerHTML = `<div class="empty">feed.json을 불러오지 못했습니다.</div>`;
+  }
+}
+
+/* ===== 인터랙션 ===== */
+qEl.addEventListener('input', (e)=>{ term = e.target.value; applyFilters(); });
+srcWrap.addEventListener('click', (e)=>{
+  const b = e.target.closest('.pill'); if(!b) return;
+  [...srcWrap.querySelectorAll('.pill')].forEach(el=>el.classList.remove('active'));
+  b.classList.add('active'); activeSrc = b.dataset.src||'ALL'; applyFilters();
+});
+catWrap.addEventListener('click', (e)=>{
+  const b = e.target.closest('.pill'); if(!b) return;
+  [...catWrap.querySelectorAll('.pill')].forEach(el=>el.classList.remove('active'));
+  b.classList.add('active'); activeCat = b.dataset.cat||'ALL'; applyFilters();
+});
+
+const io = new IntersectionObserver((entries)=>{
+  entries.forEach(en=>{ if(en.isIntersecting){ loadMore(); } });
+});
+io.observe(sentinel);
+
+/* init */
+fetchFeed();
+</script>
+</body>
+</html>
