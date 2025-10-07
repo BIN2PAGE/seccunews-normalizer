@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Good Morning, 9 o'clock Security News</title>
+  <link rel="stylesheet" href="assets/sunrise.css">
+</head>
+<body class="sunrise">
+  <header>
+    <div class="title">☀ 굿모닝, 9시 보안 뉴스</div>
+    <div id="status" class="subtitle">전날 09:00–오늘 09:00 기사, 중요도순 자동 정렬</div>
+
+    <div class="bar">
+      <div id="tabs" class="bar" style="gap:8px;">
+        <button class="tab active" data-cat="ALL">전체</button>
+        <button class="tab" data-cat="OCEAN">해양</button>
+        <button class="tab" data-cat="FORENSICS">포렌식</button>
+        <button class="tab" data-cat="AI">AI</button>
+      </div>
+	  
+	  <div id="srcTabs" class="bar" style="gap:8px;">
+	    <button class="tab active" data-src="ALL">전체 소스</button>
+	    <button class="tab" data-src="보안뉴스">보안뉴스</button>
+	    <button class="tab" data-src="데일리시큐">데일리시큐</button>
+	  </div>
+
+      <div class="datebox" style="margin-left:auto">
+	    <a class="tab" id="allBtn" href="all.html">전체 기사</a>
+        <button class="tab" id="prevDay">◀︎ 전날</button>
+        <input type="date" id="dayPicker" />
+        <button class="tab" id="nextDay">다음날 ▶︎</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div id="list" class="grid">
+      <div class="empty">불러오는 중…</div>
+    </div>
+  </div>
+
+  <script>
+/* ===== 카테고리 키워드 ===== */
+const CATS = {
+  OCEAN: ["해양","해양안전","해상","해역","연안","항만","항로","항행","선박","해운","해양수산부","해수부","해양경찰","해양경찰청","maritime","coast guard","imo"],
+  FORENSICS: ["포렌식","디지털포렌식","디지털 포렌식","dfir","메모리 포렌식","모바일 포렌식","이미지 추출","증거 보존","로그 분석","타임라인 분석","법과학","forensic"],
+  AI: ["AI","인공지능","생성형","에이전트","프롬프트","RAG","코파일럿", "프롬프트 인젝션","데이터 중독","모델 포이즈닝","LLM","MCP","Agent","RAG","Copilot","model","ai","llm","agent","mcp","rag","copilot"]
+};
+
+/* --- 해양 카테고리 엄격 포함어 & 제외어 (오검출 방지) --- */
+// 포함어: 진짜 해양/해운 맥락에서만 나오는 것 위주 (모호한 '선사'는 제외)
+const OCEAN_INCLUDE_STRICT = [
+  "해양","해상","연안","항만","항로","항행","선박","해운",
+  "해양수산부","해수부","해양경찰","해양경찰청","maritime","coast guard","imo"
+];
+
+// 제외어: 홍보/유통/생활 카테고리 단어 → 해양 탭에서 제외
+const OCEAN_EXCLUDES = [
+  "출시","할인","세일","이벤트","프로모션","팝업","오픈","리뉴얼","예약 판매","예약판매",
+  "플래그십","가전","뷰티","패션","쇼핑","매장","오프라인","특가","증정","체험단","협찬",
+  "캠핑","텐트","플리스","스니커즈","가구","인테리어","프로젝터","향수","백화점","입점"
+];
+
+/* ===== 상태/DOM ===== */
+const listEl   = document.getElementById("list");
+const tabsEl   = document.getElementById("tabs");
+const statusEl = document.getElementById("status");
+const picker   = document.getElementById("dayPicker");
+const prevBtn  = document.getElementById("prevDay");
+const nextBtn  = document.getElementById("nextDay");
+const allBtn  = document.getElementById("allBtn");
+const srcTabs = document.getElementById("srcTabs");
+
+
+let entriesMain  = [];   // [어제 09:00, 오늘 09:00)
+let entriesExtra = [];   // [오늘 09:00, 지금)
+let activeCat = "ALL";
+let activeSrc = "ALL";
+const LIMIT = 20;
+
+function matchSource(item){
+  return activeSrc === "ALL" || (item.source || "") === activeSrc;
+}
+
+/* ===== 유틸 ===== */
+function stripTags(html){ const d=document.createElement("div"); d.innerHTML=html||""; return (d.textContent||d.innerText||"").trim(); }
+function formatDate(s){
+  if (!s) return "";
+  const d = new Date(s);
+  if (isNaN(d)) return s;
+  const p = n => String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function hasHangul(s){ return /[가-힣]/.test(s); }
+function makeBoundaryRegex(keyword){ const esc=keyword.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"); return new RegExp(`(^|[^0-9A-Za-z가-힣])(${esc})`,"i"); }
+function keywordMatch(text, keywords){
+  const normalized=(text||"").replace(/\s+/g," ");
+  const lower=normalized.toLowerCase();
+  for(const kw of (keywords||[])){
+    if (hasHangul(kw)) { if (lower.includes(kw.toLowerCase())) return true; }
+    else { if (makeBoundaryRegex(kw).test(normalized)) return true; }
+  }
+  return false;
+}
+function matchCategory(item, cat){
+  if (cat === "ALL") return true;
+
+  const text = (item.title + " " + (item.summary || item.description || "")).trim();
+
+  // 해양: 엄격 포함어 + 제외어 필터 (서버 cats 무시)
+  if (cat === "OCEAN") {
+    const inc = keywordMatch(text, OCEAN_INCLUDE_STRICT);
+    const exc = keywordMatch(text, OCEAN_EXCLUDES);
+    return inc && !exc;
+  }
+
+  // 나머지: 서버 cats OR 키워드 매칭
+  if (Array.isArray(item.cats) && item.cats.includes(cat)) return true;
+  return keywordMatch(text, CATS[cat]);
+}
+
+function ymd(d){ const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+function setPicker(d){ picker.value = ymd(d); }
+function parsePicker(){ const v=picker.value; if(!v) return null; const [Y,M,D]=v.split("-").map(Number); return new Date(Y, M-1, D); }
+function getDomain(u){ try { return new URL(u).hostname.replace(/^www\./,''); } catch { return ''; } }
+function boundaryUtcISO(dateStr){ return `${dateStr}T00:00:00Z`; } // KST 09:00 경계
+
+// 선택된 날짜로 all.html 링크 동기화
+function updateAllLink(dateStr){
+  if (!allBtn) return;
+  const q = dateStr ? `?date=${encodeURIComponent(dateStr)}` : "";
+  allBtn.href = `all.html${q}`;
+}
+
+
+/* 간단 보안 관련성 필터 (feed fallback 안전망) */
+function isSecurityRelevant(title, summary){
+  const inc = ["보안","해킹","사이버","침해","유출","개인정보","랜섬웨어","악성코드",
+               "피싱","스미싱","취약점","제로데이","cve","apt","ddos","포렌식","디지털포렌식","dfir"];
+  const exc = ["출시","할인","세일","이벤트","프로모션","팝업","오픈","리뉴얼","예약 판매","예약판매",
+               "플래그십","가전","뷰티","패션","쇼핑","매장","오프라인","특가","증정","체험단","협찬","캠핑","텐트"];
+  const txt = `${title||""} ${summary||""}`.toLowerCase();
+  const hasInc = inc.some(k=>txt.includes(k));
+  const hasExc = exc.some(k=>txt.includes(k));
+  return hasInc && !hasExc;
+}
+
+/* ===== 렌더 ===== */
+function cardHTML(item){
+  const title = item.title || "";
+  const link  = item.link || "#";
+  const desc  = stripTags(item.summary || item.description || "");
+  const date  = formatDate(item.published || item.published_kst || item["dc:date"] || "");
+  const author= (item.author || item.creator || item["dc:creator"] || "").replace(/^\[|\]$/g,"");
+  const cats  = Array.isArray(item.cats) ? item.cats : [];
+  const score = typeof item.score === "number" ? item.score.toFixed(1) : "";
+  const domain= getDomain(link);
+  const chips = [
+    ...cats.map(c=>`<span class="chip cat-${c}">${c==="OCEAN"?"해양":c==="FORENSICS"?"포렌식":c==="AI"?"AI":c}</span>`),
+    item.source ? `<span class="chip src">${item.source}</span>` : ""
+  ].filter(Boolean).join("");
+  return `
+    <article class="card">
+      <h3><a href="${link}" target="_blank" rel="noopener noreferrer">${title}</a></h3>
+      <div class="desc">${desc}</div>
+      <div class="chips">${chips}</div>
+      <div class="meta">
+        <span>${date}</span>
+        ${author ? `<span>${author}</span>` : ``}
+        ${domain ? `<span>${domain}</span>` : ``}
+        ${score ? `<span class="score">★ ${score}</span>` : ``}
+      </div>
+    </article>`;
+}
+
+function countByCategory(items){
+  return {
+    ALL: items.length,
+    OCEAN: items.filter(e=>matchCategory(e,"OCEAN")).length,
+    FORENSICS: items.filter(e=>matchCategory(e,"FORENSICS")).length,
+    AI: items.filter(e=>matchCategory(e,"AI")).length,
+  };
+}
+function updateTabCounts(items){
+  const c = countByCategory(items);
+  document.querySelectorAll("#tabs .tab").forEach(btn=>{
+    const base=btn.textContent.split(" (")[0];
+    const cat=btn.dataset.cat;
+    const n=c[cat] ?? 0;
+    btn.textContent = `${base} (${n})`;
+    btn.classList.toggle("active", btn.dataset.cat===activeCat);
+    btn.style.opacity = (cat!=="ALL" && n===0) ? 0.5 : 1;
+  });
+}
+
+function renderAll(){
+  // 1) 현재 소스 선택을 먼저 반영한 풀 구성
+  const pool = entriesMain.concat(entriesExtra).filter(matchSource);
+
+  // 2) 메인/이후 소식에 소스 + 카테고리 필터 동시 적용
+  const main  = entriesMain
+    .filter(matchSource)
+    .filter(e => matchCategory(e, activeCat));
+
+  const extra = entriesExtra
+    .filter(matchSource)
+    .filter(e => matchCategory(e, activeCat));
+
+  const all = main.concat(extra);
+
+  // 3) 비었을 때 처리 + 탭 카운트는 '소스 필터 적용된 풀' 기준
+  if (!all.length){
+    listEl.innerHTML = `<div class="empty">표시할 뉴스가 없습니다.</div>`;
+    updateTabCounts(pool);
+    return;
+  }
+
+  // 4) 렌더 (헤더를 그리드 전체폭 아이템으로 별도 삽입)
+  const mainHTML   = main.slice(0, LIMIT).map(cardHTML).join("");
+  const extraHead  = extra.length ? `
+    <div class="full extra-head">
+      <span class="extra-badge">이후 소식</span>
+      <span class="extra-sub">최신순</span>
+    </div>
+  ` : "";
+  const extraHTML  = extra.length ? extra.map(cardHTML).join("") : "";
+
+  listEl.innerHTML = mainHTML + extraHead + extraHTML;
+
+  // 5) 상태바(총 개수 = 현재 소스+카테고리 필터 결과)
+  const suffix   = extra.length ? ` + 이후 ${extra.length}건` : "";
+  const srcLabel = activeSrc === "ALL" ? "전체 소스" : activeSrc;
+  statusEl.innerHTML = statusEl.innerHTML.replace(/·.*$/, "") +
+    ` · <span style="opacity:.8">${all.length}건${suffix} · ${srcLabel}</span>`;
+
+  // 6) 탭 카운트 갱신 (현재 소스만 고려)
+  updateTabCounts(pool);
+}
+
+
+/* ===== 이벤트 ===== */
+tabsEl.addEventListener("click", (e)=>{
+  const btn=e.target.closest(".tab"); if(!btn) return;
+  activeCat = btn.dataset.cat || "ALL";
+  renderAll();
+});
+prevBtn.addEventListener("click", ()=>{
+  const d=parsePicker() || new Date();
+  d.setDate(d.getDate()-1);
+  setPicker(d);
+  loadByDate(ymd(d));
+  refreshNextDisabled();
+});
+nextBtn.addEventListener("click", ()=>{
+  const d = parsePicker() || new Date();
+  const today = new Date();
+  if (ymd(d) >= ymd(today)) return;
+  d.setDate(d.getDate()+1);
+  setPicker(d);
+  loadByDate(ymd(d));
+  refreshNextDisabled();
+});
+function refreshNextDisabled(){
+  const todayStr = ymd(new Date());
+  const cur = picker.value || todayStr;
+  const lock = (cur >= todayStr);
+  nextBtn.disabled = lock;
+  nextBtn.style.opacity = lock ? .5 : 1;
+}
+picker.addEventListener('change', ()=>{
+  const d = parsePicker() || new Date();
+  const today = new Date();
+  if (ymd(d) > ymd(today)) setPicker(today);
+  loadByDate(ymd(parsePicker() || today));
+  refreshNextDisabled();
+});
+window.addEventListener('load', refreshNextDisabled);
+
+// 소스 탭 (ALL / 보안뉴스 / 데일리시큐)
+srcTabs.addEventListener("click", (e)=>{
+  const btn = e.target.closest(".tab"); 
+  if (!btn) return;
+  activeSrc = btn.dataset.src || "ALL";
+  // 활성 버튼 스타일 토글
+  srcTabs.querySelectorAll(".tab").forEach(b=>{
+    b.classList.toggle("active", b === btn);
+  });
+  renderAll();
+});
+
+
+
+/* ===== 안전 fetch ===== */
+async function safeFetchJSON(url){
+  try{ const r=await fetch(url,{cache:"no-store"}); if(!r.ok) return null; return await r.json(); }
+  catch{ return null; }
+}
+
+/* ===== 오늘 이후 소식 로더 ===== */
+async function loadExtrasIfToday(dateStr){
+  entriesExtra = [];
+  const todayStr = ymd(new Date());
+  if (dateStr !== todayStr) return;
+
+  const feedURL  = new URL('feed.json', location.href).toString();
+  const dFeed = await safeFetchJSON(feedURL);
+  if (!dFeed?.items?.length) return;
+
+  const startUtc = new Date(boundaryUtcISO(dateStr)).getTime(); // 오늘 09:00 KST
+  const nowUtc   = Date.now();
+  const mainLinks = new Set(entriesMain.map(e => e.link));
+
+  const ALLOWED_SOURCES = new Set(["보안뉴스","데일리시큐"]);
+
+  entriesExtra = dFeed.items
+    .filter(it=>{
+      const pub = it.published || it.published_raw || "";
+      const t = new Date(pub).getTime();
+      if (!t || isNaN(t)) return false;
+      if (t < startUtc || t >= nowUtc) return false;
+      if (mainLinks.has(it.link)) return false;
+      // 소스 화이트리스트만 허용
+      if (it.source && !ALLOWED_SOURCES.has(it.source)) return false;
+      return true;
+    })
+    .sort((a,b)=> new Date(b.published||b.published_raw||0) - new Date(a.published||a.published_raw||0))
+    .map(e=>({
+      title:e.title, link:e.link, summary:e.summary,
+      published: e.published || e.published_raw || "",
+      author:e.author, cats:e.cats||[], source:e.source||""
+    }));
+}
+
+/* ===== 날짜별 로더 (아카이브 → 오늘/daily) + (오늘이면 feed로 이후 소식) ===== */
+async function loadByDate(dateStr){
+  const todayStr = ymd(new Date());
+  entriesMain = []; entriesExtra = [];
+
+  const archURL  = new URL(`archive/daily-${dateStr}.json`, location.href).toString();
+  const dailyURL = new URL('daily.json',  location.href).toString();
+  const feedURL  = new URL('feed.json',   location.href).toString();
+
+  if (dateStr > todayStr) {
+    statusEl.innerHTML = `⏳ <b>미래 날짜</b> · 아직 뉴스가 없습니다`;
+    listEl.innerHTML = `<div class="empty">미래 날짜입니다. 날짜를 이전으로 선택하세요.</div>`;
+    updateTabCounts([]);
+    return;
+  }
+
+  // 1) 아카이브 우선
+  const dArch = await safeFetchJSON(archURL);
+  if (dArch?.items?.length){
+    entriesMain = dArch.items.map(e=>({
+      title:e.title, link:e.link, summary:e.summary,
+      published: e.published_kst || e.published || "",
+      author:e.author, cats:(e.cats||[]), score:e.score, source:e.source||""
+    }));
+    statusEl.innerHTML = `📅 <b>${dateStr}</b> (09:00→09:00)`;
+  } else if (dateStr === todayStr) {
+    // 2) 오늘이면 daily.json 시도
+    const dDaily = await safeFetchJSON(dailyURL);
+    if (dDaily?.items?.length){
+      entriesMain = dDaily.items.map(e=>({
+        title:e.title, link:e.link, summary:e.summary,
+        published: e.published_kst || e.published || "",
+        author:e.author, cats:(e.cats||[]), score:e.score, source:e.source||""
+      }));
+      statusEl.innerHTML = `📅 <b>오늘</b> (09→09)`;
+    }
+  }
+
+  // 3) 메인이 비었고 오늘이라면 feed로 "대체 로드"
+  if (!entriesMain.length && dateStr === todayStr){
+    const dFeed = await safeFetchJSON(feedURL);
+    if (dFeed?.items?.length){
+      const filtered = dFeed.items.filter(it => isSecurityRelevant(it.title, it.summary));
+      entriesMain = filtered.map(e=>({
+        title:e.title, link:e.link, summary:e.summary,
+        published: e.published || e.published_raw || "",
+        author:e.author, cats:e.cats||[], source:e.source||""
+      })).sort((a,b)=> new Date(b.published||0) - new Date(a.published||0));
+      statusEl.innerHTML = `📰 <b>최근 기사(대체)</b>`;
+    }
+  }
+
+  // 4) 오늘이라면 이후 소식 붙이기
+  await loadExtrasIfToday(dateStr);
+  
+  // 전체 소식보기 링크 최신화  ← 추가
+  updateAllLink(dateStr);
+
+  // 렌더
+  renderAll();
+}
+
+/* ===== 초기 진입 ===== */
+window.addEventListener('load', ()=>{
+  const today=new Date();
+  setPicker(today);
+  loadByDate(ymd(today));
+});
+  </script>
+
+  <div class="footerbar">
+    <button id="toTop" class="fab" title="맨 위로">↑</button>
+  </div>
+  <script>
+    const toTop=document.getElementById('toTop');
+    toTop?.addEventListener('click', ()=> window.scrollTo({top:0, behavior:'smooth'}));
+    window.addEventListener('scroll', ()=>{
+      toTop.style.display = window.scrollY>300 ? 'inline-flex' : 'none';
+    }, {passive:true});
+	window.addEventListener('load', updateFab);
+	
+  </script>
+</body>
+</html>
